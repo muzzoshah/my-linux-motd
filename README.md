@@ -24,6 +24,7 @@ This script is optimized for **Ubuntu** (tested on 24.04 LTS). It utilizes stand
 Install `figlet` by running:
 ```bash
 sudo apt update && sudo apt install figlet -y
+
 🚀 Installation Guide
 Run these commands in your terminal as root or using sudo:
 
