@@ -1,8 +1,8 @@
-<img width="801" height="853" alt="image" src="https://github.com/user-attachments/assets/b93319a7-69a5-4624-970e-70503734de07" /># My Linux MOTD (System Dashboard) 🐧
+# My Linux MOTD (System Dashboard) 🐧
 
 A fast, compact, and beautiful System Dashboard for Ubuntu. This script replaces your default login message (MOTD) with a comprehensive, color-coded dashboard that displays real-time server metrics directly upon SSH login. It also auto-generates your custom name in ASCII art!
 
-![MOTD Screenshot](link-gambar-screenshot-kau-nanti.png)
+<img width="801" height="853" alt="image" src="https://github.com/user-attachments/assets/b93319a7-69a5-4624-970e-70503734de07" />
 
 *(Note: Upload your screenshot image to the repo and update this link)*
 
