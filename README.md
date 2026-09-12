@@ -30,13 +30,13 @@ Run these commands in your terminal as root or using sudo:
 
 1. Download the script
 
-Bash
+```bash
 sudo wget [https://raw.githubusercontent.com/YOUR_USERNAME/my-linux-motd/main/10-admin-dashboard](https://raw.githubusercontent.com/YOUR_USERNAME/my-linux-motd/main/10-admin-dashboard) -O /etc/update-motd.d/10-admin-dashboard
 (⚠️ IMPORTANT: Replace YOUR_USERNAME with your actual GitHub username)
 
 2. Make the script executable
 
-Bash
+```bash
 sudo chmod +x /etc/update-motd.d/10-admin-dashboard
 
 3. Disable default Ubuntu MOTD spam (Optional but recommended)
