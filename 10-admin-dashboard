@@ -1,0 +1,750 @@
+#!/bin/bash
+
+# ============================================================
+#  USER CONFIGURATION (UBAH DI SINI)
+# ============================================================
+
+# 1. Nama anda untuk dipaparkan di header (ASCII) dan footer
+CUSTOM_NAME="System Admin"
+
+
+# ============================================================
+#  1. ANSI STYLE & COLOR
+# ============================================================
+
+RESET=$'\e[0m'
+BOLD=$'\e[1m'
+
+UB_ORANGE=$'\e[38;5;208m'
+CYAN=$'\e[38;5;51m'
+BLUE=$'\e[38;5;39m'
+BLUE_DARK=$'\e[38;5;33m'
+
+ICE=$'\e[38;5;255m'
+SOFT=$'\e[38;5;250m'
+GRAY=$'\e[38;5;245m'
+DARK_GRAY=$'\e[38;5;240m'
+
+OK=$'\e[38;5;84m'
+WARN=$'\e[38;5;221m'
+BAD=$'\e[38;5;203m'
+
+UBUNTU_LOGO=""
+
+
+# ============================================================
+#  2. HELPER FUNCTIONS
+# ============================================================
+
+rule() {
+    printf '%s%s%s\n' \
+        "$BLUE_DARK" \
+        "──────────────────────────────────────────────────────────────────────────────────────────────" \
+        "$RESET"
+}
+
+section() {
+    printf '\n%s%s[ %s ]%s\n' \
+        "$BLUE" \
+        "$BOLD" \
+        "$1" \
+        "$RESET"
+}
+
+row2() {
+    printf '%s  %-46s  %-46s%s\n' \
+        "$SOFT" \
+        "$1" \
+        "$2" \
+        "$RESET"
+}
+
+truncate_text() {
+    local text="$1"
+    local max="$2"
+
+    if ((${#text} <= max)); then
+        printf '%s' "$text"
+    else
+        printf '%s…' "${text:0:$((max-1))}"
+    fi
+}
+
+progress_bar() {
+    local value="$1"
+    local width=10
+    local int filled empty bar="" color
+    local i
+
+    [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
+        printf '%s[N/A]%s' "$GRAY" "$RESET"
+        return
+    }
+
+    int=${value%.*}
+
+    ((int < 0)) && int=0
+    ((int > 100)) && int=100
+
+    filled=$((int * width / 100))
+    empty=$((width - filled))
+
+    for ((i=0; i<filled; i++)); do
+        bar+="█"
+    done
+
+    for ((i=0; i<empty; i++)); do
+        bar+="░"
+    done
+
+    if ((int >= 85)); then
+        color="$BAD"
+    elif ((int >= 65)); then
+        color="$WARN"
+    else
+        color="$OK"
+    fi
+
+    printf '%s[%s] %s%%%s' \
+        "$color" \
+        "$bar" \
+        "$value" \
+        "$RESET"
+}
+
+
+# ============================================================
+#  3. FAST SERVICE CHECK
+# ============================================================
+
+service_status_text() {
+    local service="$1"
+    local status
+
+    status=$(systemctl is-active "$service" 2>/dev/null)
+
+    case "$status" in
+        active)
+            printf 'Running'
+            ;;
+        inactive|failed|activating|deactivating)
+            printf 'Stopped'
+            ;;
+        *)
+            printf 'N/A'
+            ;;
+    esac
+}
+
+
+# ============================================================
+#  4. DOMAIN DISPLAY
+# ============================================================
+
+print_domains_2col() {
+    local -a domains=()
+    local count half left right
+    local i
+
+    if [ -n "$DOMAIN_LIST" ]; then
+        mapfile -t domains <<< "$DOMAIN_LIST"
+    fi
+
+    count=${#domains[@]}
+
+    if ((count == 0)); then
+        printf '      %sNone%s\n' "$GRAY" "$RESET"
+        return
+    fi
+
+    half=$(((count + 1) / 2))
+
+    for ((i=0; i<half; i++)); do
+
+        left="${domains[$i]}"
+        right=""
+
+        if ((i + half < count)); then
+            right="${domains[$((i + half))]}"
+        fi
+
+        if [ -n "$right" ]; then
+
+            printf '      %s↳%s %-40s  %s↳%s %s%s%s\n' \
+                "$UB_ORANGE" \
+                "$RESET" \
+                "$left" \
+                "$UB_ORANGE" \
+                "$RESET" \
+                "$SOFT" \
+                "$right" \
+                "$RESET"
+
+        else
+
+            printf '      %s↳%s %s%s%s\n' \
+                "$UB_ORANGE" \
+                "$RESET" \
+                "$SOFT" \
+                "$left" \
+                "$RESET"
+        fi
+    done
+}
+
+
+# ============================================================
+#  5. BASIC SYSTEM DATA
+# ============================================================
+
+TIMESTAMP=$(date +"%d %b %Y %H:%M:%S %Z")
+
+HOSTNAME_VAL=${HOSTNAME:-$(hostname 2>/dev/null)}
+[ -z "$HOSTNAME_VAL" ] && HOSTNAME_VAL="N/A"
+
+if [ -r /etc/os-release ]; then
+    . /etc/os-release
+    OS_NAME="${PRETTY_NAME:-Linux}"
+else
+    OS_NAME="Linux"
+fi
+
+KERNEL_VER=$(uname -r)
+UPTIME_VAL=$(uptime -p 2>/dev/null)
+UPTIME_VAL=${UPTIME_VAL#up }
+
+[ -z "$UPTIME_VAL" ] && UPTIME_VAL="N/A"
+
+
+# ============================================================
+#  6. PACKAGE COUNT
+# ============================================================
+
+if command -v dpkg-query >/dev/null 2>&1; then
+
+    PKG_VAL=$(dpkg-query -W \
+        -f='${binary:Package}\n' \
+        2>/dev/null \
+        | wc -l)
+
+else
+    PKG_VAL="N/A"
+fi
+
+
+# ============================================================
+#  7. CPU
+# ============================================================
+
+CPU_NAME=$(awk -F: '
+/model name/ {
+    gsub(/^[ \t]+/, "", $2)
+    print $2
+    exit
+}' /proc/cpuinfo 2>/dev/null)
+
+[ -z "$CPU_NAME" ] && CPU_NAME="Unknown CPU"
+
+CPU_NAME=$(printf '%s' "$CPU_NAME" \
+    | sed \
+        -e 's/(R)//g' \
+        -e 's/(TM)//g' \
+        -e 's/ CPU @.*//')
+
+CPU_NAME_SHORT=$(truncate_text "$CPU_NAME" 42)
+
+CPU_CORES=$(nproc 2>/dev/null)
+[ -z "$CPU_CORES" ] && CPU_CORES="N/A"
+
+
+# ============================================================
+#  8. CPU USAGE
+# ============================================================
+
+read_cpu() {
+    read -r cpu user nice system idle iowait irq softirq steal rest \
+        < /proc/stat
+
+    CPU_IDLE=$((idle + iowait))
+    CPU_TOTAL=$((user + nice + system + idle + iowait + irq + softirq + steal))
+}
+
+read_cpu
+
+PREV_IDLE=$CPU_IDLE
+PREV_TOTAL=$CPU_TOTAL
+
+sleep 0.10
+
+read_cpu
+
+DIFF_IDLE=$((CPU_IDLE - PREV_IDLE))
+DIFF_TOTAL=$((CPU_TOTAL - PREV_TOTAL))
+
+if ((DIFF_TOTAL > 0)); then
+
+    CPU_USAGE=$(awk \
+        -v idle="$DIFF_IDLE" \
+        -v total="$DIFF_TOTAL" \
+        'BEGIN {
+            printf "%.1f", 100 * (total-idle) / total
+        }')
+
+else
+    CPU_USAGE="0.0"
+fi
+
+
+# ============================================================
+#  9. MEMORY / SWAP
+# ============================================================
+
+read -r MEM_T MEM_U SWAP_T SWAP_U < <(
+    free -m 2>/dev/null | awk '
+    /^Mem:/ {
+        mt=$2
+        mu=$3
+    }
+
+    /^Swap:/ {
+        st=$2
+        su=$3
+    }
+
+    END {
+        print mt, mu, st, su
+    }'
+)
+
+MEM_T=${MEM_T:-0}
+MEM_U=${MEM_U:-0}
+SWAP_T=${SWAP_T:-0}
+SWAP_U=${SWAP_U:-0}
+
+MEM_STR="${MEM_U}MB/${MEM_T}MB"
+SWAP_STR="${SWAP_U}MB/${SWAP_T}MB"
+
+if ((MEM_T > 0)); then
+
+    MEM_PCT=$(awk \
+        -v used="$MEM_U" \
+        -v total="$MEM_T" \
+        'BEGIN {
+            printf "%.1f", used * 100 / total
+        }')
+
+else
+    MEM_PCT="0.0"
+fi
+
+
+# ============================================================
+#  10. STORAGE / LOAD / PROCESSES
+# ============================================================
+
+read -r DISK_T DISK_U DISK_P < <(
+    df -hP / 2>/dev/null \
+    | awk 'NR==2 {
+        print $2, $3, $5
+    }'
+)
+
+DISK_T=${DISK_T:-N/A}
+DISK_U=${DISK_U:-N/A}
+DISK_P=${DISK_P:-N/A}
+
+read -r LOAD1 LOAD5 LOAD15 REST < /proc/loadavg
+
+LOAD_VAL="${LOAD1}, ${LOAD5}, ${LOAD15}"
+
+PROCS_VAL=$(find /proc \
+    -maxdepth 1 \
+    -type d \
+    -regex '/proc/[0-9]+' \
+    2>/dev/null \
+    | wc -l)
+
+
+# ============================================================
+#  11. USERS
+# ============================================================
+
+WHO_DATA=$(who 2>/dev/null)
+
+if [ -n "$WHO_DATA" ]; then
+
+    USERS_COUNT=$(printf '%s\n' "$WHO_DATA" | wc -l)
+
+    USERS_ACT=$(printf '%s\n' "$WHO_DATA" \
+        | awk '{print $1}' \
+        | sort -u \
+        | paste -sd ',' -)
+
+else
+
+    USERS_COUNT=0
+    USERS_ACT="None"
+
+fi
+
+USER_STR="${USERS_COUNT} (${USERS_ACT})"
+
+
+# ============================================================
+#  12. LAST LOGIN
+# ============================================================
+
+LAST_LOG=$(last -n 1 -i 2>/dev/null | awk '
+NR == 1 && $1 !~ /wtmp/ {
+    print $1" ("$3") "$4" "$5" "$6" "$7
+}')
+
+[ -z "$LAST_LOG" ] && LAST_LOG="No recent record"
+
+LAST_LOG_SHORT=$(truncate_text "$LAST_LOG" 40)
+
+
+# ============================================================
+#  13. NETWORK
+# ============================================================
+
+DEFAULT_ROUTE=$(ip -4 route show default 2>/dev/null | head -n1)
+
+NET_IF=$(awk '
+{
+    for (i=1; i<=NF; i++) {
+        if ($i == "dev") {
+            print $(i+1)
+            exit
+        }
+    }
+}' <<< "$DEFAULT_ROUTE")
+
+DEFAULT_GW=$(awk '
+{
+    for (i=1; i<=NF; i++) {
+        if ($i == "via") {
+            print $(i+1)
+            exit
+        }
+    }
+}' <<< "$DEFAULT_ROUTE")
+
+[ -z "$NET_IF" ] && NET_IF="N/A"
+[ -z "$DEFAULT_GW" ] && DEFAULT_GW="N/A"
+
+if [ "$NET_IF" != "N/A" ]; then
+
+    IP4=$(ip -o -4 addr show dev "$NET_IF" scope global 2>/dev/null \
+        | awk 'NR==1 {
+            split($4,a,"/")
+            print a[1]
+        }')
+
+    IP6=$(ip -o -6 addr show dev "$NET_IF" scope global 2>/dev/null \
+        | awk 'NR==1 {
+            split($4,a,"/")
+            print a[1]
+        }')
+
+fi
+
+IP4=${IP4:-N/A}
+IP6=${IP6:-N/A}
+
+
+# ============================================================
+#  14. CSF FIREWALL
+# ============================================================
+
+if command -v csf >/dev/null 2>&1; then
+
+    if command -v timeout >/dev/null 2>&1; then
+
+        if timeout 1 csf -l >/dev/null 2>&1; then
+            FW_DISP="Active"
+        else
+            FW_DISP="Down"
+        fi
+
+    elif csf -l >/dev/null 2>&1; then
+
+        FW_DISP="Active"
+
+    else
+
+        FW_DISP="Down"
+
+    fi
+
+else
+    FW_DISP="N/A"
+fi
+
+
+# ============================================================
+#  15. SECURITY UPDATES
+# ============================================================
+
+CRIT_UPD=0
+
+UPDATES_FILE="/var/lib/update-notifier/updates-available"
+
+if [ -r "$UPDATES_FILE" ]; then
+
+    SECURITY_LINE=$(grep -i \
+        'security update' \
+        "$UPDATES_FILE" \
+        2>/dev/null \
+        | head -n1)
+
+    if [ -n "$SECURITY_LINE" ]; then
+
+        CRIT_UPD=$(printf '%s' "$SECURITY_LINE" \
+            | grep -oE '[0-9]+' \
+            | head -n1)
+
+    fi
+fi
+
+CRIT_UPD=${CRIT_UPD:-0}
+
+
+# ============================================================
+#  16. FAILED SSH
+# ============================================================
+
+if journalctl --help 2>/dev/null | grep -q -- '--grep'; then
+
+    FAILED_SSH=$(journalctl \
+        -q \
+        -u ssh.service \
+        -u sshd.service \
+        --since today \
+        --no-pager \
+        -o cat \
+        --grep='Failed password|authentication failure|Invalid user' \
+        2>/dev/null \
+        | wc -l)
+
+else
+
+    FAILED_SSH=$(journalctl \
+        -q \
+        -u ssh.service \
+        -u sshd.service \
+        --since today \
+        --no-pager \
+        -o cat \
+        2>/dev/null \
+        | grep -ciE \
+        'Failed password|authentication failure|Invalid user')
+
+fi
+
+FAILED_SSH=${FAILED_SSH:-0}
+
+
+# ============================================================
+#  17. DOMAIN DISCOVERY
+# ============================================================
+
+DOMAIN_LIST=$(
+    {
+        if [ -d /etc/nginx/sites-enabled ]; then
+
+            grep -hE \
+                '^[[:space:]]*server_name[[:space:]]+' \
+                /etc/nginx/sites-enabled/* \
+                2>/dev/null \
+            | sed \
+                -e 's/#.*//' \
+                -E \
+                -e 's/^[[:space:]]*server_name[[:space:]]+//' \
+                -e 's/;//g' \
+            | tr ' ' '\n'
+        fi
+
+        if [ -d /etc/apache2/sites-enabled ]; then
+
+            grep -hEi \
+                '^[[:space:]]*(ServerName|ServerAlias)[[:space:]]+' \
+                /etc/apache2/sites-enabled/* \
+                2>/dev/null \
+            | sed \
+                -e 's/#.*//' \
+                -E \
+                -e 's/^[[:space:]]*(ServerName|ServerAlias)[[:space:]]+//' \
+            | tr ' ' '\n'
+        fi
+
+    } \
+    | sed '/^[[:space:]]*$/d' \
+    | grep -vE \
+        '^(_|\*|localhost|default_server|~)$' \
+    | sort -u
+)
+
+if [ -n "$DOMAIN_LIST" ]; then
+    DOMAIN_COUNT=$(printf '%s\n' "$DOMAIN_LIST" | grep -c .)
+else
+    DOMAIN_COUNT=0
+fi
+
+
+# ============================================================
+#  18. SERVICES
+# ============================================================
+
+SSH_SVC=$(service_status_text ssh)
+NGINX_SVC=$(service_status_text nginx)
+APACHE_SVC=$(service_status_text apache2)
+MARIADB_SVC=$(service_status_text mariadb)
+MYSQL_SVC=$(service_status_text mysql)
+DOCKER_SVC=$(service_status_text docker)
+
+
+# ============================================================
+#  19. BRAND (ASCII ART)
+# ============================================================
+
+print_brand() {
+    printf '\n'
+    rule
+    printf '\n'
+
+    printf '%s%s' "$UB_ORANGE" "$BOLD"
+    
+    # Periksa jika figlet dipasang untuk auto-generate nama
+    if command -v figlet >/dev/null 2>&1; then
+        figlet -f slant "$CUSTOM_NAME"
+    else
+        # Jika figlet tiada, papar nama biasa sebagai teks
+        printf '\n      %s%s\n\n' "$BOLD" "$CUSTOM_NAME"
+    fi
+    
+    printf '%s' "$RESET"
+
+    printf '      %sUbuntu System Dashboard%s\n' \
+        "$GRAY" \
+        "$RESET"
+
+    printf '      %sHost:%s %s%s%s  %s•%s  %sTime:%s %s%s%s\n' \
+        "$DARK_GRAY" "$RESET" \
+        "$ICE" "$HOSTNAME_VAL" "$RESET" \
+        "$BLUE" "$RESET" \
+        "$DARK_GRAY" "$RESET" \
+        "$ICE" "$TIMESTAMP" "$RESET"
+
+    rule
+}
+
+
+# ============================================================
+#  20. OUTPUT
+# ============================================================
+
+print_brand
+
+
+# SYSTEM
+
+section "SYSTEM"
+
+printf '  %sOS        :%s %s%s%s %s%s%s\n' \
+    "$SOFT" "$RESET" \
+    "$UB_ORANGE" "$BOLD" "$UBUNTU_LOGO" \
+    "$SOFT" "$OS_NAME" "$RESET"
+
+row2 \
+    "Kernel    : $KERNEL_VER" \
+    "Uptime    : $UPTIME_VAL"
+
+row2 \
+    "Hostname  : $HOSTNAME_VAL" \
+    "Packages  : $PKG_VAL"
+
+row2 \
+    "Last Login: $LAST_LOG_SHORT" \
+    ""
+
+
+# RESOURCES
+
+section "RESOURCES"
+
+row2 \
+    "CPU       : $CPU_NAME_SHORT" \
+    "Cores     : $CPU_CORES"
+
+row2 \
+    "CPU Usage : $(progress_bar "$CPU_USAGE")" \
+    "Memory    : $(progress_bar "$MEM_PCT")"
+
+row2 \
+    "Swap      : $SWAP_STR" \
+    "Storage   : $DISK_U/$DISK_T ($DISK_P)"
+
+row2 \
+    "Load      : $LOAD_VAL" \
+    "Processes : $PROCS_VAL"
+
+
+# SECURITY & NETWORK
+
+section "SECURITY & NETWORK"
+
+row2 \
+    "CSF Wall  : $FW_DISP" \
+    "Crit Upd  : $CRIT_UPD"
+
+row2 \
+    "Users In  : $USER_STR" \
+    "Failed SSH: $FAILED_SSH"
+
+row2 \
+    "Interface : $NET_IF" \
+    "Gateway   : $DEFAULT_GW"
+
+row2 \
+    "IPv4      : $IP4" \
+    "IPv6      : $(truncate_text "$IP6" 32)"
+
+
+# HOSTING & SERVICES
+
+section "HOSTING & SERVICES"
+
+row2 \
+    "Domains   : $DOMAIN_COUNT configured" \
+    "SSH:$SSH_SVC  Nginx:$NGINX_SVC  Apache:$APACHE_SVC"
+
+row2 \
+    "MariaDB:$MARIADB_SVC  MySQL:$MYSQL_SVC  Docker:$DOCKER_SVC" \
+    ""
+
+
+# DOMAINS
+
+printf '\n%s%s  FULL DOMAIN LIST%s\n' \
+    "$ICE" \
+    "$BOLD" \
+    "$RESET"
+
+print_domains_2col
+
+
+# FOOTER
+
+printf '\n'
+rule
+
+printf ' %sSYSTEM DASHBOARD%s  %s•%s  %sUbuntu%s  %s•%s  %s%s%s\n' \
+    "$GRAY" "$RESET" \
+    "$BLUE" "$RESET" \
+    "$UB_ORANGE" "$RESET" \
+    "$BLUE" "$RESET" \
+    "$CYAN" "$CUSTOM_NAME" "$RESET"
+
+rule
+printf '\n'
