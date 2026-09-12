@@ -26,3 +26,45 @@ This script is optimized for **Ubuntu** (tested on 24.04 LTS). It utilizes stand
 Install `figlet` by running:
 ```bash
 sudo apt update && sudo apt install figlet -y
+
+🚀 **Installation Guide**
+Run these commands in your terminal as root or using sudo:
+
+**1. Download the script**
+
+Bash
+sudo wget [https://raw.githubusercontent.com/YOUR_USERNAME/my-linux-motd/main/10-admin-dashboard](https://raw.githubusercontent.com/YOUR_USERNAME/my-linux-motd/main/10-admin-dashboard) -O /etc/update-motd.d/10-admin-dashboard
+(⚠️ IMPORTANT: Replace YOUR_USERNAME with your actual GitHub username)
+
+**2. Make the script executable**
+
+Bash
+sudo chmod +x /etc/update-motd.d/10-admin-dashboard
+
+**3. Disable default Ubuntu MOTD spam (Optional but recommended)**
+To keep your dashboard clean, you can disable default Ubuntu news and help messages:
+
+Bash
+sudo chmod -x /etc/update-motd.d/10-help-text
+sudo chmod -x /etc/update-motd.d/50-motd-news
+
+**4. Test it out!**
+Relogin to your SSH session or run this to view it immediately:
+
+Bash
+run-parts /etc/update-motd.d/
+🎨 Customization (Make it yours!)
+You can easily change the name displayed on the dashboard (Header ASCII art and Footer).
+
+Edit the script on your server:
+
+Bash
+sudo nano /etc/update-motd.d/10-admin-dashboard
+Find the USER CONFIGURATION section at the very top of the file and change this line to your desired name:
+
+Bash
+CUSTOM_NAME="Your Name Here"
+Save the file, and the script will automatically generate the new ASCII text on your next login!
+
+**📄 License**
+This project is licensed under the MIT License - see the LICENSE file for details.
